@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tf_pid_tools"
+version = "0.1.0"
+description = "Transfer function identification and PID tuning tools"
+authors = [
+    { name="Alessandrini Antoine", email="a.alsdrini@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy",
+    "control"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
