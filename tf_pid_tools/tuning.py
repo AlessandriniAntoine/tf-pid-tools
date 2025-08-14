@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 from .pid import PID
 
 
-def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"time_response": 1, "transition_metric": 0, "steady_state_error": 0, "command_effort": 0.5}):
+def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"time_response": 1, "transition_metric": 0, "steady_state_error": 0, "command_effort": 0.5}, t:np.ndarray=np.linspace(0, 20, 500)):
     pid.update_params(params, update_name=False)
 
     T = ct.feedback(pid.tf * sys_tf, 1)
-    t, y = ct.step_response(T, np.linspace(0, 20, 500))
+    _, y = ct.step_response(T, t)
 
     # 1. time respone at 5%
     steady_state = y[-1]
@@ -43,7 +43,7 @@ def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"ti
             weights["steady_state_error"] * ess +
             weights["command_effort"] * cmd_metric )
 
-def optimize(sys_tf:ct.TransferFunction, pid:PID, weights:dict, bounds:list | None=None, method:str='L-BFGS-B') -> tuple[PID, float]:
+def optimize(sys_tf:ct.TransferFunction, pid:PID, weights:dict, bounds:list | None=None, method:str='L-BFGS-B', t:np.ndarray=np.linspace(0, 20, 500)) -> tuple[PID, float]:
     """
     Optimize PID parameters to minimize the cost function.
 
@@ -71,7 +71,7 @@ def optimize(sys_tf:ct.TransferFunction, pid:PID, weights:dict, bounds:list | No
             if bound[0] < 0:
                 raise ValueError("Bounds must be non-negative.")
 
-    res = minimize(cost, initial_params, args=(sys_tf, pid, weights), bounds=bounds, method=method)
+    res = minimize(cost, initial_params, args=(sys_tf, pid, weights, t), bounds=bounds, method=method)
     pid.update_params(res.x)
     return pid, res.fun
 
