@@ -1,9 +1,42 @@
+"""
+pid.py
+-------
+
+Module defining the PID controller class.
+
+This module provides a PID controller implementation with methods
+to update parameters, compute control commands, reset states,
+and generate the corresponding transfer function.
+"""
+
 import numpy as np
 import control as ct
 
 
 class PID:
+    """
+    Proportional-Integral-Derivative (PID) Controller.
 
+    This class implements a configurable PID controller that can
+    be updated, simulated, and represented as a transfer function.
+
+    Attributes
+    ----------
+    Kp : float
+        Proportional gain.
+    Ki : float
+        Integral gain.
+    Kd : float
+        Derivative gain.
+    name : str | None
+        Type of controller ("P", "PI", "PD", "PID", etc.).
+    tf : control.TransferFunction | None
+        Transfer function representation of the controller.
+    integral : np.ndarray
+        Stored integral term for the controller state.
+    prev_error : np.ndarray
+        Previous error value for derivative calculation.
+    """
     _Kp : float = 0.0
     _Ki : float = 0.0
     _Kd : float = 0.0
@@ -13,6 +46,18 @@ class PID:
     prev_error : np.ndarray
 
     def __init__(self, Kp: float=0.0, Ki: float=0.0, Kd: float=0.0):
+        """
+        Initialize a PID controller with given gains.
+
+        Parameters
+        ----------
+        Kp : float, optional
+            Proportional gain (default 0.0).
+        Ki : float, optional
+            Integral gain (default 0.0).
+        Kd : float, optional
+            Derivative gain (default 0.0).
+        """
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd

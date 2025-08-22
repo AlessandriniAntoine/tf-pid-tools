@@ -1,3 +1,17 @@
+"""
+apps.py
+-------
+
+Graphical applications for control engineering.
+
+This module provides interactive Tkinter-based apps for:
+1. PID auto-tuning: interactive adjustment and optimization of PID controllers.
+2. Transfer function identification: estimation of system dynamics from data.
+
+The apps embed live Matplotlib plots inside Tkinter GUIs, similar
+to Simulink tools (`pidTuner` and `systemIdentification`).
+"""
+
 import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -9,6 +23,41 @@ from .identification import estimate_transfer_function
 
 
 def auto_tune_app(sys_tf: ct.TransferFunction, bounds: list | None=None, method: str='L-BFGS-B', dt: float=0.01):
+    """
+    Launch an interactive GUI for PID auto-tuning.
+
+    The application shows the open-loop and closed-loop step responses
+    and allows the user to adjust optimization weights in real-time.
+    Each change re-optimizes the PID gains.
+
+    Parameters
+    ----------
+    sys_tf : control.TransferFunction
+        Plant/system transfer function.
+    bounds : list, optional
+        Bounds for the PID parameters.
+    method : str, optional
+        Optimization method (default: 'L-BFGS-B').
+    dt : float, optional
+        Simulation time step (default: 0.01).
+
+    Returns
+    -------
+    PID
+        Optimized PID controller.
+
+    Examples
+    --------
+    >>> import control as ct
+    >>> from tf_pid_tools import auto_tune_app
+    >>>
+    >>> # Example system: second-order
+    >>> sys = ct.tf([1], [1, 2, 1])
+    >>>
+    >>> # Launch GUI (blocking call)
+    >>> pid = auto_tune_app(sys, dt=0.05)
+    >>> print(pid)
+    """
     initial_pid = guess_pid(sys_tf)
     current_pid = initial_pid.copy()
 
@@ -26,13 +75,13 @@ def auto_tune_app(sys_tf: ct.TransferFunction, bounds: list | None=None, method:
     fig, ax = plt.subplots(figsize=(6,4))
     T_init = ct.feedback(initial_pid.tf * sys_tf, 1)
     _, y_init = ct.step_response(goal * T_init, t)
-    line_sys, = ax.plot(t, y_sys, '--r', label="Système")
-    line_pid, = ax.plot(t, y_init, label="PID optimisé")
-    ax.set_xlabel("Temps (s)")
-    ax.set_ylabel("Réponse")
+    line_sys, = ax.plot(t, y_sys, '--r', label="Open Loop")
+    line_pid, = ax.plot(t, y_init, label="Closed Loop PID")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Response")
     ax.grid(True)
     ax.legend()
-    ax.set_title(f"PID initial: \nKp={initial_pid.Kp}, Ki={initial_pid.Ki}, Kd={initial_pid.Kd}")
+    ax.set_title(f"Initial PID: \nKp={initial_pid.Kp}, Ki={initial_pid.Ki}, Kd={initial_pid.Kd}")
 
     canvas = FigureCanvasTkAgg(fig, master=root)
     canvas.get_tk_widget().grid(row=0, column=0, columnspan=3, pady=10)
@@ -63,7 +112,7 @@ def auto_tune_app(sys_tf: ct.TransferFunction, bounds: list | None=None, method:
         ax.relim()
         ax.autoscale_view()
         ax.set_title(
-            f"{pid.name} optimized: Cost: {cost:.1e}\nKp={pid.Kp:.1e}, Ki={pid.Ki:.1e}, Kd={pid.Kd:.1e}"
+            f"Optimized {pid.name}: Cost: {cost:.1e}\nKp={pid.Kp:.1e}, Ki={pid.Ki:.1e}, Kd={pid.Kd:.1e}"
         )
         canvas.draw_idle()
 
@@ -107,10 +156,47 @@ def auto_tune_app(sys_tf: ct.TransferFunction, bounds: list | None=None, method:
 
 
 def auto_estimate_app(inputs, outputs, dt):
+    """
+    Launch an interactive GUI for transfer function identification.
+
+    The application lets the user choose the number of poles and zeros
+    via sliders. At each change, a new transfer function is estimated
+    from the data and the simulated response is plotted.
+
+    Parameters
+    ----------
+    inputs : np.ndarray
+        Input signal applied to the system.
+    outputs : np.ndarray
+        Measured output signal of the system.
+    dt : float
+        Sampling time step.
+
+    Returns
+    -------
+    control.TransferFunction
+        Identified transfer function.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import control as ct
+    >>> from tf_pid_tools import auto_estimate_app
+    >>>
+    >>> # True system
+    >>> sys_true = ct.tf([1], [1, 1])
+    >>> t = np.linspace(0, 10, 200)
+    >>> u = np.ones_like(t)
+    >>> _, y, _ = ct.forced_response(sys_true, t, u)
+    >>>
+    >>> # Launch GUI (blocking call)
+    >>> sys_est = auto_estimate_app(u, y, dt=t[1]-t[0])
+    >>> print(sys_est)
+    """
     current_tf = ct.TransferFunction([1], [1])
 
     root = tk.Tk()
-    root.title("PID Auto-tuning")
+    root.title("Transfer Function Auto-identification")
 
     t = np.arange(0, (len(outputs)-1)*dt + dt/ 2 , dt)
 
@@ -118,13 +204,13 @@ def auto_estimate_app(inputs, outputs, dt):
     # Figure Matplotlib
     fig, ax = plt.subplots(figsize=(10,8))
     _, y_init = ct.forced_response(current_tf, t, inputs)
-    line_sys, = ax.plot(t, outputs, '--r', label="Système")
-    line_pid, = ax.plot(t, y_init, label="PID optimisé")
-    ax.set_xlabel("Temps (s)")
-    ax.set_ylabel("Réponse")
+    line_sys, = ax.plot(t, outputs, '--r', label="System")
+    line_tf, = ax.plot(t, y_init, label="Identified TF")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Response")
     ax.grid(True)
     ax.legend()
-    ax.set_title(f"TF : Error = 0\nNum={current_tf.num[0][0].tolist()}, \nDen={current_tf.den[0][0].tolist()}")
+    ax.set_title(f"Identified TF : Error = 0\nNum={current_tf.num[0][0].tolist()}, \nDen={current_tf.den[0][0].tolist()}")
 
     canvas = FigureCanvasTkAgg(fig, master=root)
     canvas.get_tk_widget().grid(row=0, column=0, columnspan=3, pady=10)
@@ -135,7 +221,6 @@ def auto_estimate_app(inputs, outputs, dt):
         "number_of_poles": tk.DoubleVar(value=1.0),
     }
 
-
     def optimize_callback():
         nonlocal current_tf
         initial_tf = ct.TransferFunction([1] * int(weights["number_of_zeros"].get()+1), [1] * int(weights["number_of_poles"].get()+1))
@@ -145,7 +230,7 @@ def auto_estimate_app(inputs, outputs, dt):
         current_tf = tf.copy()
         _, y_tf = ct.forced_response(tf, t, inputs)
         error = np.linalg.norm(outputs - y_tf)
-        line_pid.set_ydata(y_tf)
+        line_tf.set_ydata(y_tf)
         ax.relim()
         ax.autoscale_view()
         ax.set_title(

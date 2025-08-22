@@ -1,3 +1,14 @@
+"""
+tuning.py
+---------
+
+Module providing PID tuning and optimization routines.
+
+This module allows optimization of PID parameters for a given
+system transfer function, using cost-based optimization and
+heuristic methods (Ziegler–Nichols, IMC).
+"""
+
 import numpy as np
 import control as ct
 from scipy.optimize import minimize
@@ -7,6 +18,33 @@ from .pid import PID
 
 
 def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"time_response": 1, "transition_metric": 0, "steady_state_error": 0, "command_effort": 0.5}, t:np.ndarray=np.linspace(0, 20, 500)):
+    """
+    Compute the cost of a given PID configuration for a system.
+
+    The cost is a weighted sum of performance metrics:
+    - time response (settling time to 5% band),
+    - transition behavior (overshoot + oscillations),
+    - steady-state error,
+    - command effort.
+
+    Parameters
+    ----------
+    params : list
+        Current PID parameters [Kp, Ki, Kd].
+    sys_tf : control.TransferFunction
+        System transfer function.
+    pid : PID
+        PID controller instance to update.
+    weights : dict, optional
+        Weights for the cost function components.
+    t : np.ndarray, optional
+        Time vector for simulation.
+
+    Returns
+    -------
+    float
+        Computed cost value.
+    """
     pid.update_params(params, update_name=False)
 
     T = ct.feedback(pid.tf * sys_tf, 1)
@@ -27,7 +65,7 @@ def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"ti
     transition_metric = overshoot + 0.1 * oscillations
 
     # 3. Steady-state error
-    ess = abs(1 - y[-1])
+    steady_state_error = abs(1 - steady_state)
 
     # 4. Command effort
     e = 1 - y
@@ -35,24 +73,37 @@ def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"ti
     u = pid.compute_command_batch(e, dt)
     cmd_amp = np.max(np.abs(u))
     cmd_rate = np.max(np.abs(np.diff(u) / dt))
-    cmd_metric = cmd_amp + 0.01 * cmd_rate
+    command_metric = cmd_amp + 0.01 * cmd_rate
 
 
     return ( weights["time_response"] * t95 +
             weights["transition_metric"] * transition_metric +
-            weights["steady_state_error"] * ess +
-            weights["command_effort"] * cmd_metric )
+            weights["steady_state_error"] * steady_state_error +
+            weights["command_effort"] * command_metric )
 
 def optimize(sys_tf:ct.TransferFunction, pid:PID, weights:dict, bounds:list | None=None, method:str='L-BFGS-B', t:np.ndarray=np.linspace(0, 20, 500)) -> tuple[PID, float]:
     """
     Optimize PID parameters to minimize the cost function.
 
-    :param sys_tf: Transfer function of the system.
-    :param pid: initial PID controller instance.
-    :param bounds: Bounds for the parameters.
-    :param method: Optimization method.
-    :param weights: Weights for the cost function components.
-    :return: Result of the optimization.
+    Parameters
+    ----------
+    sys_tf : control.TransferFunction
+        Transfer function of the system.
+    pid : PID
+        Initial PID controller instance.
+    weights : dict
+        Weights for the cost function components.
+    bounds : list, optional
+        Bounds for the PID parameters (non-negative).
+    method : str, optional
+        Optimization method (default: 'L-BFGS-B').
+    t : np.ndarray, optional
+        Time vector for simulation.
+
+    Returns
+    -------
+    tuple of (PID, float)
+        Optimized PID controller and the achieved cost value.
     """
 
     required_keys = ["time_response", "transition_metric", "steady_state_error", "command_effort"]
@@ -78,8 +129,21 @@ def optimize(sys_tf:ct.TransferFunction, pid:PID, weights:dict, bounds:list | No
 
 def guess_pid(sys_tf: ct.TransferFunction) -> PID:
     """
-    Try to find an initial PID using Ziegler-Nichols method.
-    If it fails (no sustained oscillations), fall back to IMC tuning.
+    Estimate an initial PID controller using heuristics.
+
+    The function first tries the Ziegler–Nichols method. If no
+    sustained oscillations are detected, it falls back to IMC
+    tuning. If both fail, it returns a default PID.
+
+    Parameters
+    ----------
+    sys_tf : control.TransferFunction
+        Transfer function of the system.
+
+    Returns
+    -------
+    PID
+        An initial guess for the PID controller.
     """
     Ku, Tu = None, None
     t = np.linspace(0, 100, 5000)
@@ -127,21 +191,54 @@ def guess_pid(sys_tf: ct.TransferFunction) -> PID:
 
 def auto_tune(sys_tf:ct.TransferFunction, initial_pid:PID, weights:dict={}, bounds:list|None=None, method:str='L-BFGS-B', plot:bool=True, verbose:bool=True) -> PID:
     """
-    Automatically tune the PID controller for a given system transfer function.
+    Automatically tune the PID controller for a given system.
 
-    :param sys_tf: Transfer function of the system.
-    :param initial_pid: Initial PID controller instance.
-    :param weights: Weights for the cost function components.
-    :param bounds: Bounds for the parameters.
-    :param method: Optimization method.
-    :return: Optimized PID controller and cost value.
+    This function optimizes the PID parameters, prints the results,
+    and optionally plots the closed-loop step response.
+
+    Parameters
+    ----------
+    sys_tf : control.TransferFunction
+        Transfer function of the system.
+    initial_pid : PID
+        Initial PID controller instance.
+    weights : dict, optional
+        Weights for the cost function components.
+    bounds : list, optional
+        Bounds for the PID parameters (non-negative).
+    method : str, optional
+        Optimization method (default: 'L-BFGS-B').
+    plot : bool, optional
+        Whether to plot the step response (default: True).
+    verbose : bool, optional
+        Whether to print optimization results (default: True).
+
+    Returns
+    -------
+    PID
+        Optimized PID controller.
+
+    Examples
+    --------
+    >>> import control as ct
+    >>> import numpy as np
+    >>> from tf_pid_tools import PID, guess_pid, auto_tune
+    >>>
+    >>> # Define a simple second-order system
+    >>> sys = ct.tf([1], [1, 2, 1])
+    >>>
+    >>> # Initial PID (can be a rough guess)
+    >>> pid0 = guess_pid(sys)
+    >>>
+    >>> # Tune automatically
+    >>> pid_opt = auto_tune(sys, pid0, weights={"time_response": 1, "command_effort": 0.5}, plot=False)
     """
-    pid, cost = optimize(sys_tf, initial_pid, weights, bounds, method)
+    pid, cost_value = optimize(sys_tf, initial_pid, weights, bounds, method)
     T_PID = ct.feedback(pid.tf * sys_tf, 1)
 
     if verbose:
         print(f"Optimized PID parameters: Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f}")
-        print(f"Cost value: {cost:.2f}")
+        print(f"Cost value: {cost_value:.2f}")
         print(f"Transfer function of the closed-loop system: \n{T_PID}")
 
     if plot:
@@ -149,11 +246,11 @@ def auto_tune(sys_tf:ct.TransferFunction, initial_pid:PID, weights:dict={}, boun
         t_OL, y_OL = ct.step_response(sys_tf, t)
         t_PID, y_PID = ct.step_response(T_PID, t)
         plt.figure()
-        plt.plot(t_OL, y_OL, '--r', label="Système (G1)", alpha=0.9)
-        plt.plot(t_PID, y_PID, '--', label=f"Optimisé (Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f})", alpha=0.6)
-        plt.xlabel("Temps (s)")
-        plt.ylabel("Réponse")
-        plt.title(f"Réponse indicielle - PID - cost={cost:.2f}")
+        plt.plot(t_OL, y_OL, '--r', label="Open Loop", alpha=0.9)
+        plt.plot(t_PID, y_PID, '--', label=f"Closed Loop (Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f})", alpha=0.6)
+        plt.xlabel("Time (s)")
+        plt.ylabel("Response")
+        plt.title(f"Step Response - PID - cost={cost_value:.2f}")
         plt.grid(True)
         plt.legend()
         plt.show()
