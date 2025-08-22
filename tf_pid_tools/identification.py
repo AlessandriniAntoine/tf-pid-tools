@@ -13,38 +13,6 @@ from scipy.optimize import minimize
 import control as ct
 
 
-def cost(params:list, inputs:np.ndarray, outputs:np.ndarray, nb_numerator:int, dt:float):
-    """
-    Compute the mean squared error between the measured output
-    and the response of a candidate transfer function.
-
-    Parameters
-    ----------
-    params : list
-        Flattened parameters of the transfer function
-        (numerator coefficients followed by denominator coefficients).
-    inputs : np.ndarray
-        Input signal applied to the system.
-    outputs : np.ndarray
-        Measured output signal of the system.
-    nb_numerator : int
-        Number of numerator coefficients.
-    dt : float
-        Sampling time step.
-
-    Returns
-    -------
-    float
-        Mean squared error (MSE) between measured and simulated outputs.
-    """
-    num = params[:nb_numerator]
-    den = params[nb_numerator:]
-    tf = ct.TransferFunction(num, den)
-    stop = dt * (outputs.shape[0]-1)
-    t, y = ct.forced_response(tf, np.arange(0, stop + dt/2, dt), inputs)
-    return np.mean((outputs - y) ** 2)  # MSE
-
-
 def estimate_transfer_function(inputs:np.ndarray, outputs:np.ndarray, initial_tf:ct.TransferFunction, dt:float) -> ct.TransferFunction:
     """
     Estimate a transfer function from input/output data.
@@ -100,3 +68,35 @@ def estimate_transfer_function(inputs:np.ndarray, outputs:np.ndarray, initial_tf
     num = res.x[:len(initial_numerator)]
     den = res.x[len(initial_numerator):]
     return ct.TransferFunction(num, den)
+
+
+def cost(params:list, inputs:np.ndarray, outputs:np.ndarray, nb_numerator:int, dt:float):
+    """
+    Compute the mean squared error between the measured output
+    and the response of a candidate transfer function.
+
+    Parameters
+    ----------
+    params : list
+        Flattened parameters of the transfer function
+        (numerator coefficients followed by denominator coefficients).
+    inputs : np.ndarray
+        Input signal applied to the system.
+    outputs : np.ndarray
+        Measured output signal of the system.
+    nb_numerator : int
+        Number of numerator coefficients.
+    dt : float
+        Sampling time step.
+
+    Returns
+    -------
+    float
+        Mean squared error (MSE) between measured and simulated outputs.
+    """
+    num = params[:nb_numerator]
+    den = params[nb_numerator:]
+    tf = ct.TransferFunction(num, den)
+    stop = dt * (outputs.shape[0]-1)
+    t, y = ct.forced_response(tf, np.arange(0, stop + dt/2, dt), inputs)
+    return np.mean((outputs - y) ** 2)  # MSE

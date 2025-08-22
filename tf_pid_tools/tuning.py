@@ -17,6 +17,75 @@ import matplotlib.pyplot as plt
 from .pid import PID
 
 
+def auto_tune(sys_tf:ct.TransferFunction, initial_pid:PID, weights:dict={}, bounds:list|None=None, method:str='L-BFGS-B', plot:bool=True, verbose:bool=True) -> PID:
+    """
+    Automatically tune the PID controller for a given system.
+
+    This function optimizes the PID parameters, prints the results,
+    and optionally plots the closed-loop step response.
+
+    Parameters
+    ----------
+    sys_tf : control.TransferFunction
+        Transfer function of the system.
+    initial_pid : PID
+        Initial PID controller instance.
+    weights : dict, optional
+        Weights for the cost function components.
+    bounds : list, optional
+        Bounds for the PID parameters (non-negative).
+    method : str, optional
+        Optimization method (default: 'L-BFGS-B').
+    plot : bool, optional
+        Whether to plot the step response (default: True).
+    verbose : bool, optional
+        Whether to print optimization results (default: True).
+
+    Returns
+    -------
+    PID
+        Optimized PID controller.
+
+    Examples
+    --------
+    >>> import control as ct
+    >>> import numpy as np
+    >>> from tf_pid_tools import PID, guess_pid, auto_tune
+    >>>
+    >>> # Define a simple second-order system
+    >>> sys = ct.tf([1], [1, 2, 1])
+    >>>
+    >>> # Initial PID (can be a rough guess)
+    >>> pid0 = guess_pid(sys)
+    >>>
+    >>> # Tune automatically
+    >>> pid_opt = auto_tune(sys, pid0, weights={"time_response": 1, "command_effort": 0.5}, plot=False)
+    """
+    pid, cost_value = optimize(sys_tf, initial_pid, weights, bounds, method)
+    T_PID = ct.feedback(pid.tf * sys_tf, 1)
+
+    if verbose:
+        print(f"Optimized PID parameters: Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f}")
+        print(f"Cost value: {cost_value:.2f}")
+        print(f"Transfer function of the closed-loop system: \n{T_PID}")
+
+    if plot:
+        t = np.linspace(0, 20, 500)
+        t_OL, y_OL = ct.step_response(sys_tf, t)
+        t_PID, y_PID = ct.step_response(T_PID, t)
+        plt.figure()
+        plt.plot(t_OL, y_OL, '--r', label="Open Loop", alpha=0.9)
+        plt.plot(t_PID, y_PID, '--', label=f"Closed Loop (Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f})", alpha=0.6)
+        plt.xlabel("Time (s)")
+        plt.ylabel("Response")
+        plt.title(f"Step Response - PID - cost={cost_value:.2f}")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
+
+    return pid
+
+
 def cost(params:list, sys_tf:ct.TransferFunction, pid: PID, weights: dict = {"time_response": 1, "transition_metric": 0, "steady_state_error": 0, "command_effort": 0.5}, t:np.ndarray=np.linspace(0, 20, 500)):
     """
     Compute the cost of a given PID configuration for a system.
@@ -187,72 +256,3 @@ def guess_pid(sys_tf: ct.TransferFunction) -> PID:
 
     # 3. Full fallback
     return PID(1.0, 0.1, 0.05)
-
-
-def auto_tune(sys_tf:ct.TransferFunction, initial_pid:PID, weights:dict={}, bounds:list|None=None, method:str='L-BFGS-B', plot:bool=True, verbose:bool=True) -> PID:
-    """
-    Automatically tune the PID controller for a given system.
-
-    This function optimizes the PID parameters, prints the results,
-    and optionally plots the closed-loop step response.
-
-    Parameters
-    ----------
-    sys_tf : control.TransferFunction
-        Transfer function of the system.
-    initial_pid : PID
-        Initial PID controller instance.
-    weights : dict, optional
-        Weights for the cost function components.
-    bounds : list, optional
-        Bounds for the PID parameters (non-negative).
-    method : str, optional
-        Optimization method (default: 'L-BFGS-B').
-    plot : bool, optional
-        Whether to plot the step response (default: True).
-    verbose : bool, optional
-        Whether to print optimization results (default: True).
-
-    Returns
-    -------
-    PID
-        Optimized PID controller.
-
-    Examples
-    --------
-    >>> import control as ct
-    >>> import numpy as np
-    >>> from tf_pid_tools import PID, guess_pid, auto_tune
-    >>>
-    >>> # Define a simple second-order system
-    >>> sys = ct.tf([1], [1, 2, 1])
-    >>>
-    >>> # Initial PID (can be a rough guess)
-    >>> pid0 = guess_pid(sys)
-    >>>
-    >>> # Tune automatically
-    >>> pid_opt = auto_tune(sys, pid0, weights={"time_response": 1, "command_effort": 0.5}, plot=False)
-    """
-    pid, cost_value = optimize(sys_tf, initial_pid, weights, bounds, method)
-    T_PID = ct.feedback(pid.tf * sys_tf, 1)
-
-    if verbose:
-        print(f"Optimized PID parameters: Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f}")
-        print(f"Cost value: {cost_value:.2f}")
-        print(f"Transfer function of the closed-loop system: \n{T_PID}")
-
-    if plot:
-        t = np.linspace(0, 20, 500)
-        t_OL, y_OL = ct.step_response(sys_tf, t)
-        t_PID, y_PID = ct.step_response(T_PID, t)
-        plt.figure()
-        plt.plot(t_OL, y_OL, '--r', label="Open Loop", alpha=0.9)
-        plt.plot(t_PID, y_PID, '--', label=f"Closed Loop (Kp={pid.Kp:.2f}, Ki={pid.Ki:.2f}, Kd={pid.Kd:.2f})", alpha=0.6)
-        plt.xlabel("Time (s)")
-        plt.ylabel("Response")
-        plt.title(f"Step Response - PID - cost={cost_value:.2f}")
-        plt.grid(True)
-        plt.legend()
-        plt.show()
-
-    return pid
